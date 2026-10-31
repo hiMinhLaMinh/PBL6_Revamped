@@ -1,0 +1,45 @@
+# Dataset videos, generated outputs, and model binaries.
+# Keep dataset/metadata/, dataset/splits/, experiment configs, and notebooks trackable.
+/dataset/raw/
+/outputs/
+/models/pretrained/
+/models/checkpoints/
+/models/exported/
+
+# Python environments, bytecode, and tooling caches.
+.venv/
+.venv-*/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+*.egg-info/
+/build/
+/dist/
+
+# Notebook checkpoints and local experiment-tracker data.
+.ipynb_checkpoints/
+/wandb/
+/mlruns/
+
+# Local environment variables; retain shareable templates.
+.env
+.env.*
+!.env.example
+!.env.template
+
+# OS and editor temporary files.
+.DS_Store
+._*
+Thumbs.db
+.idea/
+*.swp
+*.swo
+*~

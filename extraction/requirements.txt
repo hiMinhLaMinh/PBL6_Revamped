@@ -1,0 +1,6 @@
+# Python 3.11; MediaPipe Solutions backend, matching the verified runtime.
+# Install one OpenCV distribution only: mediapipe uses opencv-contrib-python.
+mediapipe==0.10.14
+opencv-contrib-python==4.11.0.86
+numpy==1.26.4
+pytest==8.4.2
