@@ -1,0 +1,8 @@
+{
+  "version": "pose_tracking_v1",
+  "pose_visibility_min": 0.5,
+  "pose_max_distance": 0.15,
+  "tracking_max_distance": 0.1,
+  "ambiguity_margin": 0.015,
+  "max_tracking_gap_frames": 5
+}

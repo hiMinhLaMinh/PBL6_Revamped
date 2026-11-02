@@ -8,7 +8,7 @@ Extractor raw đang dùng được mô tả tại [tài liệu trích xuất](EX
 - Pi 4B 8GB hiện có; không bổ sung phần cứng. Bottleneck là MediaPipe, không phải classifier.
 - Người dùng báo khoảng **5.x FPS** khi Pose và Hands đều complexity=0; chưa đo lại bằng Revamped.
 - Có thể thay model và thiết kế pipeline mới. Config raw hiện tại vẫn complexity=1;
-  thảo luận triển khai chưa thay cấu hình hoặc yêu cầu raw 75 điểm.
+  raw đã đổi sang representation 50 điểm/schema v3, giữ thêm mọi hand candidate ngày 01/11; các phương án tăng tốc dưới đây vẫn chưa triển khai.
 - Ví dụ 5.5 FPS ≈ 182 ms/frame; đủ 25 FPS cần trung bình ≤40 ms/frame, còn phải xét p95/reacquire.
 
 ## Những gì đã xác minh
@@ -57,7 +57,7 @@ Hand detector cũng không thay thế body landmarks nếu model nhận dạng v
 | Buffer frame mới nhất, tracking/video mode, giảm copy/overlay | Giảm backlog/overhead; không làm một lượt inference vốn chậm trở nên nhanh hơn. |
 
 Đổi sang 7 điểm thân + 42 điểm tay XY là một đề xuất deployment, **chưa chốt**.
-Extractor mới cần schema/identity riêng; không giả tạo joint/Z để giống cache MediaPipe 75 điểm.
+Raw hiện tại là representation 50 điểm/schema v3, giữ thêm mọi hand candidate. Backend khác cần schema/identity riêng, không giả tạo joint/Z.
 Tài liệu này tập trung chạy local trên Pi; hướng offload được phân tích riêng tại
 [Vision API/cloud](EXTRACTION_VISION_CLOUD.md). Không đề xuất mua phần cứng mới.
 

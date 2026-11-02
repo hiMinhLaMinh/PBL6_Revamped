@@ -1,95 +1,93 @@
 # Trích xuất skeleton raw
 
-Cập nhật: 31/10/2026. Phạm vi: **video → cache landmark gốc** để dùng lại cho ablation.
-Thảo luận riêng: [tốc độ Pi 4](EXTRACTION_SPEED_PI4.md), [Vision API/cloud](EXTRACTION_VISION_CLOUD.md).
+Cập nhật: 01/11/2026. Phạm vi **video + metadata chính thức → raw NPZ + manifest**.
+[Association](HAND_ASSOCIATION.md) · [QC](EXTRACTION_QC.md) · [Mac/front](EXTRACTION_MAC.md) ·
+[tốc độ Pi 4](EXTRACTION_SPEED_PI4.md) · [Vision/cloud](EXTRACTION_VISION_CLOUD.md).
 
-## Quyết định kỹ thuật
+## Điểm và quy ước đã chốt
 
-| Lựa chọn hiện tại | Lý do / quy ước |
-|---|---|
-| **75 điểm: 33 Pose + 21 mỗi tay**, bỏ FaceMesh | Giữ đầy đủ đầu ra Pose/Hands; chọn tập điểm cho model ở bước sau. Pose vẫn có các điểm mặt thuộc topology của nó. |
-| MediaPipe Solutions **Pose + Hands riêng**, phiên bản 0.10.14 | Giữ backend rõ ràng; đây không phải Holistic. Config hiện tại dùng complexity=1 cho cả hai. |
-| Lưu XYZ native và world estimates | Cho phép khảo sát XY/XYZ sau này. XY chuẩn hóa theo kích thước ảnh; Z và world của Pose/mỗi tay có hệ quy chiếu riêng, không phải hệ 3D chung đã hiệu chuẩn. |
-| Không normalize theo cơ thể/tay, repair, resample hay augment | Cache giữ quan sát trước feature engineering. Không clip tọa độ về `[0,1]`. |
-| `smooth_landmarks=false`, `static_image_mode=false` | Tắt smoothing Pose nhưng vẫn giữ tracking nội bộ detector. Thay cấu hình detector cần trích xuất thành cache khác. |
-| Thiếu tọa độ → **NaN**; giữ visibility nguyên bản | Chưa áp threshold, điền zero hay copy frame. Mask hữu hạn chỉ phản ánh có tọa độ, không chứng minh điểm đúng. |
-| Hai tay lưu theo **detector slots** | Thứ tự có thể đổi giữa frame; chưa gán trái/phải giải phẫu. Giữ label/score handedness để xử lý sau. |
-| Giữ mọi frame đọc được và timestamp gốc | Ưu tiên timestamp decoder tăng nghiêm ngặt; nếu không hợp lệ, dùng frame/FPS và ghi warning (giả định CFR). Không tự mặc định 25 FPS. |
-| Schema riêng: `vsl400.detector_raw.v1` | Raw cũ chỉ có 49 điểm XY. Không dùng lẫn cache mới với schema đặc trưng đã normalize của pipeline cũ. |
-
-`input_mirrored=false` chỉ ghi quy ước input, không flip ảnh hay tự đổi handedness.
-Score handedness là confidence phân loại cả tay, không phải confidence từng joint.
-Trước khi dùng chuỗi tay cho model, cần gán và theo dõi bên tay rõ ràng.
+- **Representation mục tiêu 50 điểm:** 8 Pose + 21 mỗi tay. Pose theo thứ tự MediaPipe
+  `[11,12,13,14,15,16,23,24]`: vai, khuỷu, cổ tay, hông trái/phải.
+- Không lấy mặt, chân hoặc các điểm bàn tay thô của Pose; không chạy FaceMesh.
+  Không tự tạo joint cổ; trung điểm hai vai có thể suy ra downstream.
+- Pose + Hands Solutions riêng; config mặc định complexity=1, `smooth_landmarks=false`,
+  `static_image_mode=false` (tracking detector vẫn hoạt động).
+- Giữ XYZ image/world native; hệ Z/world của Pose và mỗi tay khác nhau. Không normalize,
+  clip tọa độ, repair, resample hay augmentation; điểm thiếu giữ NaN.
+- **Raw giữ tất cả hand candidates**, kể cả >2. Association L/R là view dẫn xuất riêng,
+  không đổi raw; giữ nhãn/score detector và mask. Mask hữu hạn không chứng minh điểm đúng.
+- `input_mirrored=false` ghi quy ước ảnh; không flip ảnh/tự đổi nhãn handedness.
+- **Schema `vsl400.detector_raw.v3`**. Loader đọc v1 (33 Pose)/v2 (8 Pose), nhưng resume
+  không dùng cache cũ thay v3. Thay topology/backend/config/policy cần identity phù hợp.
 
 ## Đầu ra NPZ
 
-`T` là số frame lưu; 75 là số vị trí/frame, không bảo đảm mọi điểm đều được phát hiện.
-Pose dùng index `0..32`, mỗi tay `0..20` theo MediaPipe; giữ riêng cổ tay từ hai detector.
+`T`: số frame; `D`: tổng hand candidates. XYZ/visibility/scores float32.
 
-| Khóa | Shape / kiểu | Nội dung |
-|---|---|---|
-| `raw_pose_xyz`, `raw_pose_world_xyz` | `(T,33,3)` float32 | Pose image/world estimates |
-| `raw_hand_xyz`, `raw_hand_world_xyz` | `(T,2,21,3)` float32 | Hai hand slots; world thiếu cũng là NaN |
-| `raw_pose_visibility` | `(T,33)` float32 | Visibility chưa threshold |
-| `handedness_label`, `handedness_score` | `(T,2)` Unicode / float32 | `Left`/`Right`/rỗng và score/NaN |
-| `pose_finite`, `hand_finite` | `(T,33)` / `(T,2,21)` bool | Tọa độ XYZ hữu hạn |
-| `detector_returned` | `(T,3)` bool | `[pose, hand_slot_0, hand_slot_1]` |
-| `frame_indices` | `(T,)` int32 | Liên tiếp từ 0 |
-| `timestamps`, `decoder_timestamps` | `(T,)` float64 | Giây; timeline được chọn và decoder giữ riêng |
-| `meta_json` | scalar Unicode | Config, nguồn video, runtime, timing và warnings |
+| Khóa | Shape / nội dung |
+|---|---|
+| `raw_pose_xyz`, `raw_pose_world_xyz`, `raw_pose_visibility` | `(T,8,3)`, `(T,8,3)`, `(T,8)` |
+| `hand_candidate_xyz`, `hand_candidate_world_xyz` | `(D,21,3)`, toàn bộ candidates |
+| `hand_candidate_label`, `hand_candidate_score` | `(D,)`, nhãn Unicode và score |
+| `hand_candidate_offsets` | `(T+1,)` int64, ranh giới candidates theo frame |
+| `associated_hand_xyz`, `associated_hand_world_xyz` | `(T,2,21,3)`, trái/phải giải phẫu |
+| `association_indices/method/cost/margin/valid` | Các khóa riêng `(T,2)`; xem [association](HAND_ASSOCIATION.md) |
+| `raw_hand_xyz`, `raw_hand_world_xyz` | `(T,2,21,3)`, detection slots khi N≤2; NaN khi N>2 |
+| `handedness_label/score`, `pose_finite`, `hand_finite`, `detector_returned` | View/mask legacy; không dùng để đếm candidates v3 |
+| `frame_indices` | `(T,)` int32 liên tiếp từ 0 |
+| `timestamps`, `decoder_timestamps` | `(T,)` float64, giây |
+| `meta_json` | JSON scalar: metadata gốc, identity, runtime/policy, completeness |
 
-Metadata ghi SHA-256 video/code, đường dẫn nguồn, kích thước ảnh, FPS và giới hạn pilot.
-`--resume` chỉ skip khi schema và identity video/config/runtime/`max_frames` khớp.
-Ghi file atomically, không dùng pickle; giữ cấu trúc thư mục và đuôi video để tránh trùng Part/view.
+Timestamp ưu tiên decoder tăng nghiêm ngặt; fallback frame/FPS có warning (giả định CFR).
+Không tự mặc định 25 FPS hoặc giả tạo world thiếu. Dùng `load_raw(path)` trong
+[extract_raw.py](../extraction/extract_raw.py); downstream L/R đọc associated view kèm mask/method.
 
-## Chạy và đọc dữ liệu
+## Metadata, manifest và resume
 
-File chính: [extract_raw.py](../extraction/extract_raw.py), [raw_extraction.json](../extraction/raw_extraction.json),
-[requirements.txt](../extraction/requirements.txt). Python đã kiểm chứng: 3.11; các thư viện chính đã pin.
+- Tìm JSON `Part_N/front_view.json` cạnh `front_view/` (tương tự left/right).
+  Giữ ID có số 0 đầu, signer/gloss; thiếu/sai metadata mặc định fail preflight.
+- NPZ giữ `video_id`, Part/view/signer/gloss, `official_metadata`, hash JSON/video/code/config,
+  mapping Pose, association policy/version và trạng thái hoàn tất. FPS thực tế và chính thức tách biệt.
+- `manifest.csv` append theo sự kiện/lượt chạy, có `run_id`: `started` rồi `complete`,
+  `incomplete`, `failed`, `skipped_complete`; lỗi preflight/runtime có trạng thái riêng.
+  Tổng hợp sự kiện cuối mỗi clip; số dòng không phải số video.
+- `batch_errors.jsonl` giữ lỗi/traceback và incomplete; lỗi một clip không dừng batch.
+  NPZ ghi atomically; ledger flush xuống đĩa. Chỉ một writer cho mỗi output root.
+- Decode complete đòi số frame khớp cả metadata chính thức và header nếu có;
+  đạt `--max-frames` luôn chưa xác nhận complete. Ambiguity không làm decode incomplete.
+- Resume chỉ skip complete đúng schema/nguồn/config/runtime/policy/metadata và số frame.
+  Matching incomplete được thử lại; khác identity/corrupt cần output riêng hoặc `--overwrite`.
+  Exit 1 khi có lỗi/incomplete. Không trộn cache giữa các điều kiện extraction.
+
+## Chạy
+
+Từ project root, dùng `.venv` riêng đã kiểm chứng; [setup/lock trên Mac](EXTRACTION_MAC.md):
 
 ```bash
-cd /Users/vohoangminh/PBL6/PBL6_Revamped/extraction
-/Users/vohoangminh/PBL6/PBL6/.venv/bin/python extract_raw.py \
-  /Users/vohoangminh/PBL6/PBL6/014170.mp4 --output ../outputs/extraction/raw_cache --resume
+.venv/bin/python extraction/extract_raw.py \
+  dataset/raw/vsl400_input --output outputs/extraction/raw_v3 --view front --dry-run
 ```
 
-Truyền thư mục thay video để chạy batch đệ quy. Pilot dùng `--max-frames 12` và output riêng.
-`--overwrite` cho phép thay cache; batch có video lỗi sẽ tiếp tục và kết thúc với exit code 1.
-Giữ nguyên input root khi resume. Trên macOS, lỗi `NSOpenGLPixelFormat` có thể cần chạy
-trong phiên desktop thông thường.
+- Pilot: thay `--dry-run` bằng `--max-videos 3`, chọn output riêng; full batch dùng `--resume`.
+- `--view front|left|right` (mặc định all); `--max-videos N` chọn N video đầu sau lọc,
+  gồm cả cache; `--max-frames N` giới hạn frame từng clip.
+- `--association-policy PATH` đổi policy, mặc định [association_policy.json](../extraction/association_policy.json).
+- Dry-run kiểm tra config/policy/metadata, không import MediaPipe/decode/tạo output.
+  `--allow-missing-metadata` chỉ cho video ngoài dataset. macOS runtime cần truy cập đồ họa.
 
-```python
-from extract_raw import load_raw
-arrays, meta = load_raw("../outputs/extraction/raw_cache/014170.mp4.raw.npz")
-pose_xy = arrays["raw_pose_xyz"][..., :2]
-hand_xy = arrays["raw_hand_xyz"][..., :2]  # Chưa gán bên tay.
-```
+## Tiến trình và bằng chứng
 
-## Tiến trình và kiểm chứng
+- 30–31/10: raw v1; preflight 7 Part/3 view, 74.259 video khớp JSON.
+- 01/11: v2 chọn Pose8 + tay42, thêm metadata/ledger/completeness/resume/dry-run.
+  [Kiểm chứng v2](../outputs/extraction/verification_v2/summary.json); pilot Mac 9/14 complete,
+  5 fail do guard >2 tay. Benchmark/QC xem tài liệu riêng.
+- 01/11: v3 giữ mọi candidate + association có provenance; **14/14 complete, 883 frame**,
+  9 frame có 3 candidates; replay offline khớp, 5 clip cần QC review. Chưa chạy full dataset.
+  [Summary](../outputs/extraction/association_v3_verification/summary.json) ·
+  [Tests](../outputs/extraction/association_v3_verification/tests.txt).
+- 01/11: tạo venv riêng + dependency lock; 55 tests đạt, 70/70 clip complete và resume skip đúng.
+  Preflight 24.753 front hợp lệ; [kiểm chứng môi trường](../outputs/extraction/venv_readiness_verification/summary.json).
+  Có thể thu raw hàng loạt; association/QC vẫn cần review trước huấn luyện.
 
-- **30/10:** kiểm tra raw cũ, chốt 75 điểm, triển khai extractor/config/validator/tests;
-  chuyển phần việc sang `PBL6_Revamped`.
-- **Kiểm chứng ngày 30/10:** 13 tests đạt; clip `014170.mp4` đọc đủ **54/54 frame**, 25 FPS,
-  1080×1080; load/schema/masks, code hash và resume hợp lệ. Pose/hand slot 0/slot 1
-  được trả về lần lượt ở 54/54/45 frame; đây không phải thống kê độ chính xác.
-- Bằng chứng: [tests](../outputs/extraction/verification_tests.txt), [summary](../outputs/extraction/verification_summary.json),
-  [resume](../outputs/extraction/verification_resume.txt). Pilot 12 frame là artifact riêng, không thay cache full.
-- **31/10:** rút gọn/tách tài liệu; gom code/config/tests vào `extraction/`, kết quả vào `outputs/extraction/`, Markdown vào `README/`.
-  Sửa đường dẫn tài liệu trong code; thuật toán/config không đổi. Cache cũ giữ code hash gốc, nên
-  resume bằng code mới sẽ yêu cầu output mới hoặc `--overwrite` có chủ đích.
-- **Sau khi di chuyển:** 13 tests vẫn đạt; config mặc định và cả hai NPZ đọc được, nội dung NPZ không đổi.
-  Log: [verification_layout_tests.txt](../outputs/extraction/verification_layout_tests.txt). Cấu trúc: [STRUCTURE.md](STRUCTURE.md).
-
-**Chưa kiểm chứng:** toàn dataset và visual QA landmark mới. Chưa nối cache vào các
-notebook đòi đặc trưng đã normalize; chưa có adapter gán bên tay. Chưa tạo venv riêng
-hoặc đóng băng toàn bộ dependency/model binaries; không cam kết tái lập bitwise giữa máy.
-
-## Cơ sở thiết kế
-
-Tham khảo việc tách skeleton representation và preprocessing trong
-[SPOTER–MediaPipe, mục 4](https://arxiv.org/html/2210.00893v1),
-[SAM-SLR, mục 3.1/4.3](https://openaccess.thecvf.com/content/CVPR2021W/ChaLearn/papers/Jiang_Skeleton_Aware_Multi-Modal_Sign_Language_Recognition_CVPRW_2021_paper.html)
-và [Roh et al., mục 3/4.2](https://aclanthology.org/2024.signlang-1.36.pdf).
-75 điểm và NaN là lựa chọn của dự án. Quy ước/index tham chiếu:
-[MediaPipe Pose](https://chuoling.github.io/mediapipe/solutions/pose.html),
-[MediaPipe Hands](https://chuoling.github.io/mediapipe/solutions/hands.html).
+Thiết kế raw tách preprocessing tham khảo [SPOTER](https://arxiv.org/html/2210.00893v1),
+[Roh et al.](https://aclanthology.org/2024.signlang-1.36.pdf); topology 50 điểm là lựa chọn dự án.

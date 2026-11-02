@@ -29,7 +29,7 @@ def results(missing_pose=False, reverse=False):
 
 def arrays_for_test():
     frames = [raw.pack_frame(*results()), raw.pack_frame(*results(missing_pose=True, reverse=True))]
-    arrays = {key: np.stack([frame[key] for frame in frames]) for key in frames[0]}
+    arrays = raw.assemble_frames(frames)
     arrays.update(frame_indices=np.arange(2, dtype=np.int32),
                   timestamps=np.array([0.0, 0.04]), decoder_timestamps=np.array([0.0, 0.04]))
     return arrays
@@ -40,7 +40,7 @@ def test_preserves_xyz_low_visibility_and_hand_slot_order():
     second = raw.pack_frame(*results(reverse=True))
     np.testing.assert_allclose(first["raw_pose_visibility"], 0.05)
     assert np.isfinite(first["raw_pose_xyz"]).all()  # No visibility threshold at extraction.
-    assert first["raw_pose_xyz"][32, 2] == np.float32(-0.032)
+    assert first["raw_pose_xyz"][7, 2] == np.float32(-0.024)
     assert first["raw_hand_xyz"][0, 0, 0] == np.float32(0.1)
     np.testing.assert_array_equal(second["raw_hand_xyz"][1], first["raw_hand_xyz"][0])
     assert list(first["handedness_label"]) == ["Left", "Right"]
@@ -137,13 +137,13 @@ def test_cli_resume_checks_source_config_and_partial_run_identity(monkeypatch, t
     output = tmp_path / "cache"
     calls = []
 
-    def fake_extract(video, cfg, max_frames):
+    def fake_extract(video, cfg, max_frames, association_policy=None):
         calls.append(video)
-        return arrays_for_test(), {"decoded_frames": 2, "warnings": []}
+        return arrays_for_test(), {"decoded_frames": 2, "reported_frames": 2, "warnings": []}
 
     monkeypatch.setattr(raw, "extract_video", fake_extract)
     monkeypatch.setattr(raw, "runtime_info", lambda: {"test_backend": "fixed"})
-    args = ["extract_raw.py", str(video_dir), "--output", str(output)]
+    args = ["extract_raw.py", str(video_dir), "--output", str(output), "--allow-missing-metadata"]
     monkeypatch.setattr("sys.argv", args)
     raw.main()
     assert len(calls) == 2

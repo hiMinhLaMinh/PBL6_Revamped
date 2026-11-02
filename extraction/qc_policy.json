@@ -1,0 +1,6 @@
+{
+  "pose_visibility_cutoff": 0.5,
+  "review_pose_observed_below": 0.9,
+  "review_no_hand_above": 0.2,
+  "review_xy_outside_above": 0.05
+}

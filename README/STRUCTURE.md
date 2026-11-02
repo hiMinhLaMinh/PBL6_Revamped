@@ -33,7 +33,8 @@ PBL6_Revamped/
 
 ## Quy ước
 
-- `dataset/` đang trống ở các thư mục con; chưa copy hay tạo dữ liệu mẫu vào đó.
+- `dataset/raw/vsl400_input/` hiện có 7 Part; giữ video và metadata JSON gốc cùng cấu trúc nguồn.
+  `dataset/metadata/` dành cho bảng tổng hợp/chuẩn hóa, không buộc tách metadata gốc khỏi Part.
 - Mã/config/tests/dependencies hiện giữ cùng bước; kết quả sinh ra ghi vào `outputs/`.
 - Weights thuộc `models/`; log và bảng số liệu thuộc `outputs/`. Khi có nhiều lần chạy,
   dùng thư mục con theo run ID và lưu config/seed/version cùng kết quả.
@@ -43,7 +44,8 @@ PBL6_Revamped/
 
 ## Nội dung đã có
 
-[Extraction](EXTRACTION.md) · [Tốc độ Pi 4](EXTRACTION_SPEED_PI4.md) · [Vision/cloud](EXTRACTION_VISION_CLOUD.md).
+[Extraction](EXTRACTION.md) · [Association](HAND_ASSOCIATION.md) · [QC](EXTRACTION_QC.md) · [Mac/front](EXTRACTION_MAC.md) ·
+[Tốc độ Pi 4](EXTRACTION_SPEED_PI4.md) · [Vision/cloud](EXTRACTION_VISION_CLOUD.md).
 
 **Tiến trình 31/10:** tạo khung thư mục; chuyển `extraction/output/` sang `outputs/extraction/`
 và sửa đường dẫn tài liệu. Giữ nguyên code/config và nội dung NPZ; chưa triển khai bước mới.

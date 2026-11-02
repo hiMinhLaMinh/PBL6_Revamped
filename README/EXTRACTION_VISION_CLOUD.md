@@ -63,7 +63,7 @@ khác hoặc phân tán ngẫu nhiên mỗi frame qua workers. Mất kết nối
 3. Nếu cần truy cập từ xa, benchmark custom extractor tại region phù hợp: chất lượng landmark,
    accuracy ISLR, FPS, latency p50/p95, jitter, băng thông, reconnect và chi phí/giờ.
 
-Chỉ là thứ tự đề xuất. Chưa đổi raw 75/config, chưa triển khai server hoặc đo speed-up.
+Chỉ là thứ tự đề xuất; chưa triển khai server hoặc đo speed-up. Raw local đã đổi sang representation 50 điểm/schema v3, giữ thêm mọi hand candidate ngày 01/11.
 **Tiến trình 31/10:** đọc nguồn chính thức Apple/Google, phân biệt API có sẵn và custom
 serving, ghi các đánh đổi; tổ chức lại tài liệu theo từng chủ đề.
 
